@@ -1,0 +1,109 @@
+{
+    "variables": {
+        "aws_access_key": "{{env `AWS_ACCESS_KEY`}}",
+        "aws_secret_key": "{{env `AWS_SECRET_KEY`}}",
+        "atlas_token": "{{env `ATLAS_TOKEN`}}",
+        "atlas_username": "{{env `ATLAS_USERNAME`}}",
+        "ssh_username": "vagrant",
+        "ssh_password": "vagrant",
+        "atlas_artifact_name": "hashi-master"
+    },
+    "builders": [{
+        "name": "virtualbox-iso",
+        "type": "virtualbox-iso",
+        "virtualbox_version_file": ".vbox_version",
+
+        "guest_os_type": "Ubuntu_64",
+        "disk_size": 40960,
+
+        "iso_url": "http://releases.ubuntu.com/14.10/ubuntu-14.10-server-amd64.iso",
+        "iso_checksum": "91bd1cfba65417bfa04567e4f64b5c55",
+        "iso_checksum_type": "md5",
+
+        "http_directory": "http",
+        "headless": true,
+        "boot_wait": "5s",
+        "boot_command": [
+            "<esc><esc><enter><wait>",
+            "/install/vmlinuz ",
+            "preseed/url=http://{{.HTTPIP}}:{{.HTTPPort}}/preseed.cfg ",
+            "debian-installer=en_US auto locale=en_US kbd-chooser/method=us ",
+            "hostname={{.Name}} ",
+            "fb=false debconf/frontend=noninteractive ",
+            "keyboard-configuration/modelcode=SKIP keyboard-configuration/layout=USA ",
+            "keyboard-configuration/variant=USA console-setup/ask_detect=false ",
+            "initrd=/install/initrd.gz -- <enter>"
+        ],
+
+        "guest_additions_path": "VBoxGuestAdditions_{{.Version}}.iso",
+
+        "ssh_username": "{{user `ssh_username`}}",
+        "ssh_password": "{{user `ssh_password`}}",
+        "ssh_port": 22,
+        "ssh_wait_timeout": "10000s",
+
+        "vboxmanage": [
+            ["modifyvm", "{{.Name}}", "--memory", "512"],
+            ["modifyvm", "{{.Name}}", "--cpus", "1"]
+        ],
+
+        "shutdown_command": "echo '{{user `ssh_password`}}'|sudo -S /sbin/halt -h -p"
+    }],
+    "push": {
+        "name": "jb_hashicorp/hashi-master",
+        "exclude": ["packer_cache"],
+        "vcs": false
+    },
+    "provisioners": [
+        {
+            "type": "shell",
+            "execute_command": "echo 'vagrant' | sudo -S -E sh {{.Path}}",
+            "inline": [
+                "sudo mkdir /ops",
+                "sudo chmod a+w /ops"
+            ]
+        },
+        {
+            "type": "file",
+            "source": "scripts",
+            "destination": "/ops"
+        },
+        {
+            "type": "shell",
+            "execute_command": "echo 'vagrant' | sudo -S -E sh {{.Path}}",
+            "scripts": [
+                "scripts/common/dependencies.sh",
+                "scripts/common/network.sh",
+                "scripts/tools/go.sh",
+                "scripts/hashi/environment.sh",
+                "scripts/hashi/vagrant.sh",
+                "scripts/hashi/packer.sh",
+                "scripts/hashi/terraform.sh",
+                "scripts/hashi/consul.sh",
+                "scripts/hashi/vault.sh",
+                "scripts/tools/docker.sh",
+                "scripts/providers/virtualbox.sh",
+                "scripts/common/cleanup.sh"
+            ]
+        }
+    ],
+    "post-processors": [
+        [
+            {
+                "type": "vagrant",
+                "keep_input_artifact": false,
+                "output": "build/{{timestamp}}_{{user `atlas_artifact_name`}}.box"
+            },
+            {
+                "type": "atlas",
+                "token": "{{user `atlas_token`}}",
+                "artifact": "{{user `atlas_username`}}/{{user `atlas_artifact_name`}}",
+                "artifact_type": "vagrant.box",
+                "metadata": {
+                    "created_at": "{{timestamp}}",
+                    "provider": "virtualbox"
+                }
+            }
+        ]
+    ]
+}
